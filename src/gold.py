@@ -331,9 +331,7 @@ def start_gold_query(
             "checkpointLocation",
             str(config.gold_checkpoint_dir),
         )
-        .trigger(
-            processingTime=config.trigger_interval
-        )
+        .trigger(availableNow=True)
         .start()
     )
 

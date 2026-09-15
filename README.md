@@ -373,9 +373,16 @@ Password: dw_password
 Port:     5432
 ```
 
-O pipeline também mantém os dados GOLD em Parquet. A tabela PostgreSQL é
-materializada ao final da execução do pipeline; por isso, execute as consultas
-somente depois que `stream-pipeline` terminar com código `0`.
+O pipeline também mantém os dados GOLD em Parquet local, no diretório
+`data/gold`, e grava o resultado agregado no PostgreSQL. As camadas BRONZE e
+SILVER são armazenadas como Parquet no MinIO. Como a entrada atual é um
+conjunto finito de arquivos, as camadas são processadas sequencialmente com
+`availableNow`, garantindo que cada Parquet seja finalizado antes da leitura
+pela próxima camada.
+
+A tabela PostgreSQL é materializada ao final da execução do pipeline; por
+isso, execute as consultas somente depois que `stream-pipeline` terminar com
+código `0`.
 
 ## Consulta pelo script
 

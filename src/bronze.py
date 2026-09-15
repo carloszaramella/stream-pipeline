@@ -39,9 +39,7 @@ def start_bronze_query(spark: SparkSession, config: PipelineConfig):
             str(config.bronze_checkpoint_dir)
         )
 
-        .trigger(
-            processingTime=config.trigger_interval
-        )
+        .trigger(availableNow=True)
         .start()
     )
 

@@ -80,8 +80,6 @@ def run_medallion_pipeline(config: PipelineConfig) -> None:
 
     spark.sparkContext.setLogLevel("WARN")
 
-    queries = []
-
     try:
         # ==========================================================
         # Pipeline Medallion
@@ -101,7 +99,7 @@ def run_medallion_pipeline(config: PipelineConfig) -> None:
             spark,
             config,
         )
-        queries.append(bronze_query)
+        bronze_query.awaitTermination()
 
         # SILVER:
         # MinIO /bronze → MinIO /silver
@@ -109,7 +107,7 @@ def run_medallion_pipeline(config: PipelineConfig) -> None:
             spark,
             config,
         )
-        queries.append(silver_query)
+        silver_query.awaitTermination()
 
         # GOLD:
         # MinIO /silver → Parquet local + PostgreSQL
@@ -117,21 +115,9 @@ def run_medallion_pipeline(config: PipelineConfig) -> None:
             spark,
             config,
         )
-        queries.append(gold_query)
-
-        # A query BRONZE controla o tempo total da execucao.
-        bronze_query.awaitTermination(
-            config.runtime_seconds
-        )
+        gold_query.awaitTermination()
 
     finally:
-        # Encerra as queries na ordem inversa.
-        for query in reversed(queries):
-            try:
-                query.stop()
-            except Exception:
-                pass
-
         # ==========================================================
         # Snapshot final da GOLD
         #
