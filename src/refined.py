@@ -1,9 +1,8 @@
-
 """Camada REFINED: agrega financiamentos por janela e dimensoes de negocio."""
 
 from __future__ import annotations
 
-import sqlite3
+import psycopg2
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.functions import (
@@ -70,7 +69,7 @@ def aggregate_refined_batch(
     trusted_df: DataFrame,
     window_duration: str,
 ) -> DataFrame:
-    """Agrega a camada trusted em batch para fechar as janelas da execucao local."""
+    """Agrega a camada trusted em batch para fechar as janelas."""
     return (
         trusted_df
         .groupBy(
@@ -109,13 +108,147 @@ def aggregate_refined_batch(
     )
 
 
+def create_postgres_table(config: PipelineConfig) -> None:
+    """Cria a tabela REFINED no PostgreSQL."""
+    with psycopg2.connect(
+        host=config.postgres_host,
+        port=config.postgres_port,
+        database=config.postgres_db,
+        user=config.postgres_user,
+        password=config.postgres_password,
+    ) as connection:
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS {SUMMARY_TABLE} (
+                    window_start TIMESTAMP,
+                    window_end TIMESTAMP,
+                    segment VARCHAR(100),
+                    region VARCHAR(100),
+                    vehicle_type VARCHAR(100),
+                    vehicle_brand VARCHAR(100),
+                    vehicle_model VARCHAR(100),
+                    financing_count INTEGER,
+                    total_financed_amount NUMERIC(18, 2),
+                    average_monthly_installment NUMERIC(18, 2),
+                    average_interest_rate_monthly NUMERIC(10, 4),
+
+                    PRIMARY KEY (
+                        window_start,
+                        window_end,
+                        segment,
+                        region,
+                        vehicle_type,
+                        vehicle_brand,
+                        vehicle_model
+                    )
+                )
+                """
+            )
+
+        connection.commit()
+
+
+def write_refined_batch(
+    batch_df: DataFrame,
+    batch_id: int,
+    config: PipelineConfig,
+    write_parquet: bool = True,
+) -> None:
+    """Grava cada microbatch em Parquet e PostgreSQL."""
+
+    if write_parquet:
+        (
+            batch_df.write
+            .mode("append")
+            .format("parquet")
+            .partitionBy(
+                "segment",
+                "region",
+                "vehicle_type",
+            )
+            .save(str(config.refined_dir))
+        )
+
+    rows = [
+        (
+            row.window_start,
+            row.window_end,
+            row.segment,
+            row.region,
+            row.vehicle_type,
+            row.vehicle_brand,
+            row.vehicle_model,
+            row.financing_count,
+            row.total_financed_amount,
+            row.average_monthly_installment,
+            row.average_interest_rate_monthly,
+        )
+        for row in batch_df.toLocalIterator()
+    ]
+
+    if not rows:
+        return
+
+    with psycopg2.connect(
+        host=config.postgres_host,
+        port=config.postgres_port,
+        database=config.postgres_db,
+        user=config.postgres_user,
+        password=config.postgres_password,
+    ) as connection:
+
+        with connection.cursor() as cursor:
+
+            cursor.executemany(
+                f"""
+                INSERT INTO {SUMMARY_TABLE} (
+                    window_start,
+                    window_end,
+                    segment,
+                    region,
+                    vehicle_type,
+                    vehicle_brand,
+                    vehicle_model,
+                    financing_count,
+                    total_financed_amount,
+                    average_monthly_installment,
+                    average_interest_rate_monthly
+                )
+                VALUES (
+                    %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s
+                )
+                ON CONFLICT (
+                    window_start,
+                    window_end,
+                    segment,
+                    region,
+                    vehicle_type,
+                    vehicle_brand,
+                    vehicle_model
+                )
+                DO UPDATE SET
+                    financing_count = EXCLUDED.financing_count,
+                    total_financed_amount = EXCLUDED.total_financed_amount,
+                    average_monthly_installment =
+                        EXCLUDED.average_monthly_installment,
+                    average_interest_rate_monthly =
+                        EXCLUDED.average_interest_rate_monthly
+                """,
+                rows,
+            )
+
+        connection.commit()
+
+
 def materialize_refined_snapshot(
     spark: SparkSession,
     config: PipelineConfig,
 ) -> None:
-    """Fecha as janelas em batch e garante uma tabela DW consultavel."""
+    """Fecha as janelas e grava o snapshot final."""
 
-    # TRUSTED agora e lida diretamente do MinIO.
     trusted_df = (
         spark.read
         .schema(FINANCING_SCHEMA)
@@ -127,16 +260,35 @@ def materialize_refined_snapshot(
         config.window_duration,
     )
 
-    # REFINED permanece local nesta etapa do projeto.
-    refined_df.write.mode("overwrite").format("parquet").partitionBy(
-        "segment",
-        "region",
-        "vehicle_type",
-    ).save(str(config.refined_dir))
+    # Mantem o Parquet como artefato analitico.
+    (
+        refined_df.write
+        .mode("overwrite")
+        .format("parquet")
+        .partitionBy(
+            "segment",
+            "region",
+            "vehicle_type",
+        )
+        .save(str(config.refined_dir))
+    )
 
-    # Recria a tabela SQLite com o snapshot completo.
-    with sqlite3.connect(config.sqlite_path) as connection:
-        connection.execute(f"DROP TABLE IF EXISTS {SUMMARY_TABLE}")
+    # Garante que a tabela PostgreSQL exista.
+    create_postgres_table(config)
+
+    # Recria o snapshot no PostgreSQL.
+    with psycopg2.connect(
+        host=config.postgres_host,
+        port=config.postgres_port,
+        database=config.postgres_db,
+        user=config.postgres_user,
+        password=config.postgres_password,
+    ) as connection:
+
+        with connection.cursor() as cursor:
+            cursor.execute(f"TRUNCATE TABLE {SUMMARY_TABLE}")
+
+        connection.commit()
 
     write_refined_batch(
         refined_df,
@@ -146,90 +298,19 @@ def materialize_refined_snapshot(
     )
 
 
-def write_refined_batch(
-    batch_df: DataFrame,
-    batch_id: int,
-    config: PipelineConfig,
-    write_parquet: bool = True,
-) -> None:
-    """Materializa cada microbatch em Parquet e na tabela SQLite do DW."""
-
-    # O Parquet permanece como artefato analitico;
-    # SQLite oferece consultas SQL locais.
-    if write_parquet:
-        batch_df.write.mode("append").format("parquet").partitionBy(
-            "segment",
-            "region",
-            "vehicle_type",
-        ).save(str(config.refined_dir))
-
-    with sqlite3.connect(config.sqlite_path) as connection:
-        connection.execute(
-            f"""
-            CREATE TABLE IF NOT EXISTS {SUMMARY_TABLE} (
-                window_start TEXT,
-                window_end TEXT,
-                segment TEXT,
-                region TEXT,
-                vehicle_type TEXT,
-                vehicle_brand TEXT,
-                vehicle_model TEXT,
-                financing_count INTEGER,
-                total_financed_amount REAL,
-                average_monthly_installment REAL,
-                average_interest_rate_monthly REAL,
-                PRIMARY KEY (
-                    window_start,
-                    window_end,
-                    segment,
-                    region,
-                    vehicle_type,
-                    vehicle_brand,
-                    vehicle_model
-                )
-            )
-            """
-        )
-
-        rows = [
-            (
-                row.window_start.isoformat(),
-                row.window_end.isoformat(),
-                row.segment,
-                row.region,
-                row.vehicle_type,
-                row.vehicle_brand,
-                row.vehicle_model,
-                row.financing_count,
-                row.total_financed_amount,
-                row.average_monthly_installment,
-                row.average_interest_rate_monthly,
-            )
-            for row in batch_df.toLocalIterator()
-        ]
-
-        if rows:
-            connection.executemany(
-                f"""
-                INSERT OR REPLACE INTO {SUMMARY_TABLE}
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                rows,
-            )
-
-
 def start_refined_query(
     spark: SparkSession,
     config: PipelineConfig,
 ):
-    """Lê TRUSTED do MinIO e grava REFINED em Parquet e SQLite."""
+    """Lê TRUSTED do MinIO e grava REFINED em Parquet e PostgreSQL."""
 
-    # TRUSTED agora esta no MinIO.
     trusted_stream = (
         spark.readStream
         .schema(FINANCING_SCHEMA)
         .parquet(config.trusted_storage_path)
     )
+
+    create_postgres_table(config)
 
     return (
         aggregate_refined(
@@ -270,10 +351,13 @@ def main() -> None:
         query = start_refined_query(spark, config)
         query.awaitTermination(config.runtime_seconds)
         query.stop()
+
+        # Fecha e materializa o snapshot final.
+        materialize_refined_snapshot(spark, config)
+
     finally:
         spark.stop()
 
 
 if __name__ == "__main__":
     main()
-
