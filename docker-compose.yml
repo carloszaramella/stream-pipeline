@@ -29,7 +29,7 @@ services:
       # ========================================================
       # POSTGRESQL
       # ========================================================
-      POSTGRES_HOST: postgres
+      POSTGRES_HOST: host.docker.internal
       POSTGRES_PORT: "5432"
       POSTGRES_DB: vehicle_financing
       POSTGRES_USER: dw_user
@@ -47,6 +47,8 @@ services:
 
       minio-init:
         condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
 
     ports:
       - "4040:4040"
@@ -176,9 +178,6 @@ services:
     image: postgres:16
     container_name: stream-pipeline-postgres
 
-    profiles:
-      - warehouse
-
     environment:
       POSTGRES_DB: vehicle_financing
       POSTGRES_USER: dw_user
@@ -196,6 +195,7 @@ services:
           "CMD-SHELL",
           "pg_isready -U dw_user -d vehicle_financing"
         ]
+      start_period: 10s
       interval: 5s
       timeout: 5s
       retries: 10

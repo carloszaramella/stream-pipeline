@@ -1,10 +1,10 @@
-"""Consultas SQL simples para inspecionar o DW SQLite local."""
+"""Consultas SQL simples para inspecionar o DW PostgreSQL."""
 
 from __future__ import annotations
 
 import argparse
 
-import sqlite3
+import psycopg2
 
 from config import PipelineConfig
 from refined import SUMMARY_TABLE
@@ -35,10 +35,20 @@ def main() -> None:
     args = parser.parse_args()
 
     config = PipelineConfig.from_environment()
-    with sqlite3.connect(config.sqlite_path) as connection:
-        cursor = connection.execute(QUERIES[args.query])
-        print(" | ".join(column[0] for column in cursor.description))
-        for row in cursor.fetchall():
+    with psycopg2.connect(
+        host=config.postgres_host,
+        port=config.postgres_port,
+        database=config.postgres_db,
+        user=config.postgres_user,
+        password=config.postgres_password,
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(QUERIES[args.query])
+            rows = cursor.fetchall()
+            columns = [column[0] for column in cursor.description]
+
+        print(" | ".join(columns))
+        for row in rows:
             print(" | ".join(str(value) for value in row))
 
 
