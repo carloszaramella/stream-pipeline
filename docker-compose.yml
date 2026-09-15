@@ -19,9 +19,9 @@ services:
 
       # ========================================================
       # MINIO
-      # Comunicação entre containers: usa o nome do serviço
+      # Comunicação entre containers
       # ========================================================
-      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ENDPOINT: http://host.docker.internal:9000
       MINIO_ACCESS_KEY: minio
       MINIO_SECRET_KEY: minio123
       MINIO_BUCKET: stream-pipeline
@@ -38,9 +38,13 @@ services:
     volumes:
       - ./data:/opt/stream-pipeline/data
 
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
     depends_on:
       minio:
         condition: service_healthy
+
       minio-init:
         condition: service_completed_successfully
 
@@ -86,10 +90,14 @@ services:
   # ============================================================
   minio:
     image: quay.io/minio/minio:latest
-    container_name: stream-pipeline-minio
 
     command:
-      server /data --address ":9000" --console-address ":9001"
+      - server
+      - /data
+      - --address
+      - "0.0.0.0:9000"
+      - --console-address
+      - "0.0.0.0:9001"
 
     environment:
       MINIO_ROOT_USER: minio
@@ -110,30 +118,55 @@ services:
           "-f",
           "http://localhost:9000/minio/health/live"
         ]
+      start_period: 15s
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 30
 
 
-  # ============================================================
+    # ============================================================
   # MINIO INITIALIZATION
   # ============================================================
   minio-init:
     image: quay.io/minio/mc:latest
-    container_name: stream-pipeline-minio-init
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
     depends_on:
       minio:
         condition: service_healthy
 
-    entrypoint: >
-      /bin/sh -c "
-      echo 'Aguardando MinIO...';
-      mc alias set local http://minio:9000 minio minio123;
-      echo 'MinIO disponível!';
-      mc mb --ignore-existing local/stream-pipeline;
-      echo 'Bucket stream-pipeline criado/verificado com sucesso.';
-      "
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+
+        echo "=========================================="
+        echo "Inicializando MinIO"
+        echo "=========================================="
+
+        echo "Configurando alias do MinIO..."
+
+        mc alias set \
+          local \
+          http://host.docker.internal:9000 \
+          minio \
+          minio123 \
+          --api S3v4
+
+        echo "Alias configurado com sucesso."
+
+        echo "Criando/verificando bucket..."
+
+        mc mb \
+          --ignore-existing \
+          local/stream-pipeline
+
+        echo "=========================================="
+        echo "Bucket stream-pipeline pronto!"
+        echo "=========================================="
 
 
   # ============================================================

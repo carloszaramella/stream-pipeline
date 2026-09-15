@@ -1,166 +1,248 @@
 """Configurações do pipeline e dos caminhos de entrada, saída e checkpoint."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
 import os
 
+
 @dataclass(frozen=True)
 class PipelineConfig:
-"""Parâmetros do processamento, sobrescritos por variáveis de ambiente."""
+    """Parâmetros do processamento, sobrescritos por variáveis de ambiente."""
 
+    base_dir: Path = Path(__file__).resolve().parents[1]
 
-base_dir: Path = Path(__file__).resolve().parents[1]
+    # ============================================================
+    # PIPELINE
+    # ============================================================
 
-# ============================================================
-# PIPELINE
-# ============================================================
+    rows_per_second: int = 5
+    window_duration: str = "10 seconds"
+    watermark_duration: str = "30 seconds"
+    trigger_interval: str = "5 seconds"
+    runtime_seconds: int = 30
 
-rows_per_second: int = 5
-window_duration: str = "10 seconds"
-watermark_duration: str = "30 seconds"
-trigger_interval: str = "5 seconds"
-runtime_seconds: int = 30
+    # ============================================================
+    # MINIO
+    # ============================================================
 
-# ============================================================
-# MINIO
-# ============================================================
+    # Comunicação entre containers Docker.
+    # NÃO usar localhost/127.0.0.1 aqui.
+    minio_endpoint: str = "http://minio:9000"
+    minio_access_key: str = "minio"
+    minio_secret_key: str = "minio123"
+    minio_bucket: str = "stream-pipeline"
 
-# Comunicação entre containers Docker.
-# NÃO usar localhost/127.0.0.1 aqui.
-minio_endpoint: str = "http://minio:9000"
-minio_access_key: str = "minio"
-minio_secret_key: str = "minio123"
-minio_bucket: str = "stream-pipeline"
+    # ============================================================
+    # POSTGRESQL / WAREHOUSE
+    # ============================================================
 
-# ============================================================
-# POSTGRESQL / WAREHOUSE
-# ============================================================
+    # Dentro da rede Docker, o hostname é o nome do serviço:
+    # postgres:5432
+    postgres_host: str = "postgres"
+    postgres_port: int = 5432
+    postgres_db: str = "vehicle_financing"
+    postgres_user: str = "dw_user"
+    postgres_password: str = "dw_password"
 
-# Dentro da rede Docker, o hostname é o nome do serviço:
-# postgres:5432
-postgres_host: str = "postgres"
-postgres_port: int = 5432
-postgres_db: str = "vehicle_financing"
-postgres_user: str = "dw_user"
-postgres_password: str = "dw_password"
+    # ============================================================
+    # DIRETÓRIOS LOCAIS
+    # ============================================================
 
-# ============================================================
-# DIRETÓRIOS LOCAIS
-# ============================================================
+    @property
+    def output_dir(self) -> Path:
+        return self.base_dir / "data" / "output"
 
-@property
-def output_dir(self) -> Path:
-    return self.base_dir / "data" / "output"
+    @property
+    def input_dir(self) -> Path:
+        return self.base_dir / "data" / "input"
 
-@property
-def input_dir(self) -> Path:
-    return self.base_dir / "data" / "input"
+    @property
+    def raw_dir(self) -> Path:
+        return self.base_dir / "data" / "raw"
 
-@property
-def raw_dir(self) -> Path:
-    return self.base_dir / "data" / "raw"
+    @property
+    def trusted_dir(self) -> Path:
+        return self.base_dir / "data" / "trusted"
 
-@property
-def trusted_dir(self) -> Path:
-    return self.base_dir / "data" / "trusted"
+    @property
+    def refined_dir(self) -> Path:
+        return self.base_dir / "data" / "refined"
 
-@property
-def refined_dir(self) -> Path:
-    return self.base_dir / "data" / "refined"
+    # ============================================================
+    # SQLITE
+    # ============================================================
+    #
+    # Mantido para compatibilidade com os testes e consultas locais.
+    # O warehouse principal será o PostgreSQL.
 
-# ============================================================
-# SQLITE
-# ============================================================
-#
-# Mantido para compatibilidade com os testes e consultas locais.
-# O warehouse principal será o PostgreSQL.
+    @property
+    def sqlite_path(self) -> Path:
+        return self.refined_dir / "vehicle_financing.sqlite"
 
-@property
-def sqlite_path(self) -> Path:
-    return self.refined_dir / "vehicle_financing.sqlite"
+    # ============================================================
+    # CHECKPOINTS LOCAIS
+    # ============================================================
 
-# ============================================================
-# CHECKPOINTS LOCAIS
-# ============================================================
+    @property
+    def checkpoint_dir(self) -> Path:
+        return self.base_dir / "data" / "checkpoint"
 
-@property
-def checkpoint_dir(self) -> Path:
-    return self.base_dir / "data" / "checkpoint"
+    @property
+    def raw_checkpoint_dir(self) -> Path:
+        return self.checkpoint_dir / "raw"
 
-@property
-def raw_checkpoint_dir(self) -> Path:
-    return self.checkpoint_dir / "raw"
+    @property
+    def trusted_checkpoint_dir(self) -> Path:
+        return self.checkpoint_dir / "trusted"
 
-@property
-def trusted_checkpoint_dir(self) -> Path:
-    return self.checkpoint_dir / "trusted"
+    @property
+    def refined_checkpoint_dir(self) -> Path:
+        return self.checkpoint_dir / "refined"
 
-@property
-def refined_checkpoint_dir(self) -> Path:
-    return self.checkpoint_dir / "refined"
+    # ============================================================
+    # MINIO / S3
+    # ============================================================
 
-# ============================================================
-# MINIO / S3
-# ============================================================
+    @property
+    def raw_storage_path(self) -> str:
+        return f"s3a://{self.minio_bucket}/raw"
 
-@property
-def raw_storage_path(self) -> str:
-    return f"s3a://{self.minio_bucket}/raw"
+    @property
+    def trusted_storage_path(self) -> str:
+        return f"s3a://{self.minio_bucket}/trusted"
 
-@property
-def trusted_storage_path(self) -> str:
-    return f"s3a://{self.minio_bucket}/trusted"
+    @property
+    def refined_storage_path(self) -> str:
+        return f"s3a://{self.minio_bucket}/refined"
 
-@property
-def refined_storage_path(self) -> str:
-    return f"s3a://{self.minio_bucket}/refined"
+    @property
+    def raw_storage_checkpoint(self) -> str:
+        return f"s3a://{self.minio_bucket}/checkpoints/raw"
 
-@property
-def raw_storage_checkpoint(self) -> str:
-    return f"s3a://{self.minio_bucket}/checkpoints/raw"
+    @property
+    def trusted_storage_checkpoint(self) -> str:
+        return f"s3a://{self.minio_bucket}/checkpoints/trusted"
 
-@property
-def trusted_storage_checkpoint(self) -> str:
-    return f"s3a://{self.minio_bucket}/checkpoints/trusted"
+    @property
+    def refined_storage_checkpoint(self) -> str:
+        return f"s3a://{self.minio_bucket}/checkpoints/refined"
 
-@property
-def refined_storage_checkpoint(self) -> str:
-    return f"s3a://{self.minio_bucket}/checkpoints/refined"
+    # ============================================================
+    # POSTGRESQL / JDBC
+    # ============================================================
 
-# ============================================================
-# POSTGRESQL / JDBC
-# ============================================================
+    @property
+    def postgres_jdbc_url(self) -> str:
+        """Retorna a URL JDBC para conexão com o PostgreSQL."""
 
-@property
-def postgres_jdbc_url(self) -> str:
-    """Retorna a URL JDBC para conexão com o PostgreSQL."""
+        return (
+            f"jdbc:postgresql://"
+            f"{self.postgres_host}:"
+            f"{self.postgres_port}/"
+            f"{self.postgres_db}"
+        )
 
-    return (
-        f"jdbc:postgresql://"
-        f"{self.postgres_host}:"
-        f"{self.postgres_port}/"
-        f"{self.postgres_db}"
-    )
+    @property
+    def postgres_jdbc_properties(self) -> dict[str, str]:
+        """Propriedades utilizadas pelo driver JDBC do PostgreSQL."""
 
-@property
-def postgres_jdbc_properties(self) -> dict[str, str]:
-    """Propriedades utilizadas pelo driver JDBC do PostgreSQL."""
+        return {
+            "user": self.postgres_user,
+            "password": self.postgres_password,
+            "driver": "org.postgresql.Driver",
+        }
 
-    return {
-        "user": self.postgres_user,
-        "password": self.postgres_password,
-        "driver": "org.postgresql.Driver",
-    }
+    # ============================================================
+    # ENVIRONMENT
+    # ============================================================
 
-# ============================================================
-# ENVIRONMENT
-# ============================================================
+    @classmethod
+    def from_environment(cls) -> "PipelineConfig":
+        """Carrega parâmetros opcionais das variáveis de ambiente."""
 
-@classmethod
-def from_environment(cls) -> "PipelineConfig":
-    """Carrega parâmetros opcionais das variáveis de ambiente."""
+        return cls(
+            base_dir=Path(
+                os.getenv(
+                    "PIPELINE_BASE_DIR",
+                    str(cls.base_dir),
+                )
+            ),
 
-    return cls(
-        # ----------------------------------------------------
-        # Diretório base
-        # -----------------------------------------------
+            rows_per_second=int(
+                os.getenv(
+                    "ROWS_PER_SECOND",
+                    str(cls.rows_per_second),
+                )
+            ),
+
+            window_duration=os.getenv(
+                "WINDOW_DURATION",
+                cls.window_duration,
+            ),
+
+            watermark_duration=os.getenv(
+                "WATERMARK_DURATION",
+                cls.watermark_duration,
+            ),
+
+            trigger_interval=os.getenv(
+                "TRIGGER_INTERVAL",
+                cls.trigger_interval,
+            ),
+
+            runtime_seconds=int(
+                os.getenv(
+                    "RUNTIME_SECONDS",
+                    str(cls.runtime_seconds),
+                )
+            ),
+
+            minio_endpoint=os.getenv(
+                "MINIO_ENDPOINT",
+                cls.minio_endpoint,
+            ),
+
+            minio_access_key=os.getenv(
+                "MINIO_ACCESS_KEY",
+                cls.minio_access_key,
+            ),
+
+            minio_secret_key=os.getenv(
+                "MINIO_SECRET_KEY",
+                cls.minio_secret_key,
+            ),
+
+            minio_bucket=os.getenv(
+                "MINIO_BUCKET",
+                cls.minio_bucket,
+            ),
+
+            postgres_host=os.getenv(
+                "POSTGRES_HOST",
+                cls.postgres_host,
+            ),
+
+            postgres_port=int(
+                os.getenv(
+                    "POSTGRES_PORT",
+                    str(cls.postgres_port),
+                )
+            ),
+
+            postgres_db=os.getenv(
+                "POSTGRES_DB",
+                cls.postgres_db,
+            ),
+
+            postgres_user=os.getenv(
+                "POSTGRES_USER",
+                cls.postgres_user,
+            ),
+
+            postgres_password=os.getenv(
+                "POSTGRES_PASSWORD",
+                cls.postgres_password,
+            ),
+        )

@@ -6,6 +6,8 @@ WORKDIR /opt/stream-pipeline
 
 COPY requirements.txt .
 
+ENV POSTGRES_JDBC_VERSION=42.7.8
+
 RUN pip install --no-cache-dir -r requirements.txt
 
 RUN wget -q \
@@ -30,7 +32,7 @@ ENV PIPELINE_BASE_DIR=/opt/stream-pipeline
 
 ENV PYSPARK_PYTHON=python3
 ENV PYSPARK_DRIVER_PYTHON=python3
-ENV POSTGRES_JDBC_VERSION=42.7.8
+
 
 
 CMD ["/opt/spark/bin/spark-submit", "--master", "local[2]", "/opt/stream-pipeline/src/medallion_pipeline.py"]
