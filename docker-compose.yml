@@ -1,5 +1,4 @@
 services:
-
   # ============================================================
   # STREAM PIPELINE
   # ============================================================
@@ -52,9 +51,8 @@ services:
         "/opt/spark/bin/spark-submit",
         "--master",
         "local[2]",
-        "/opt/stream-pipeline/src/medallion_pipeline.py"
+        "/opt/stream-pipeline/src/medallion_pipeline.py",
       ]
-
 
   # ============================================================
   # TESTS
@@ -69,17 +67,10 @@ services:
       PYSPARK_PYTHON: python3
       PYSPARK_DRIVER_PYTHON: python3
 
-    command:
-      [
-        "python3",
-        "-m",
-        "pytest",
-        "-q"
-      ]
+    command: ["python3", "-m", "pytest", "-q"]
 
     volumes:
       - ./data:/opt/stream-pipeline/data
-
 
   # ============================================================
   # MINIO
@@ -88,8 +79,7 @@ services:
     image: quay.io/minio/minio:latest
     container_name: stream-pipeline-minio
 
-    command:
-      server /data --address ":9000" --console-address ":9001"
+    command: server /data --address ":9000" --console-address ":9001"
 
     environment:
       MINIO_ROOT_USER: minio
@@ -103,17 +93,10 @@ services:
       - minio_data:/data
 
     healthcheck:
-      test:
-        [
-          "CMD",
-          "curl",
-          "-f",
-          "http://localhost:9000/minio/health/live"
-        ]
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 5s
       timeout: 5s
       retries: 10
-
 
   # ============================================================
   # MINIO INITIALIZATION
@@ -121,6 +104,7 @@ services:
   minio-init:
     image: quay.io/minio/mc:latest
     container_name: stream-pipeline-minio-init
+    network_mode: service:minio
 
     depends_on:
       minio:
@@ -128,13 +112,14 @@ services:
 
     entrypoint: >
       /bin/sh -c "
-      echo 'Aguardando MinIO...';
-      mc alias set local http://minio:9000 minio minio123;
+      until mc alias set local http://localhost:9000 minio minio123 >/dev/null 2>&1; do
+        echo 'Aguardando MinIO...';
+        sleep 2;
+      done;
       echo 'MinIO disponível!';
       mc mb --ignore-existing local/stream-pipeline;
       echo 'Bucket stream-pipeline criado/verificado com sucesso.';
       "
-
 
   # ============================================================
   # POSTGRES
@@ -158,15 +143,10 @@ services:
       - postgres_data:/var/lib/postgresql/data
 
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -U dw_user -d vehicle_financing"
-        ]
+      test: ["CMD-SHELL", "pg_isready -U dw_user -d vehicle_financing"]
       interval: 5s
       timeout: 5s
       retries: 10
-
 
 # ==============================================================
 # VOLUMES
