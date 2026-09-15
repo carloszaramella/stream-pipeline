@@ -27,13 +27,13 @@ FINANCING_SCHEMA = StructType(
     ]
 )
 
-RAW_SCHEMA = StructType(
+BRONZE_SCHEMA = StructType(
     FINANCING_SCHEMA.fields
     + [StructField("ingestion_time", TimestampType(), True)]
 )
 
 # Estas colunas sao gravadas como particoes e nao ficam no arquivo Parquet.
-TRUSTED_PARQUET_SCHEMA = StructType(
+SILVER_PARQUET_SCHEMA = StructType(
     [field for field in FINANCING_SCHEMA.fields if field.name not in {"region", "vehicle_type"}]
 )
 

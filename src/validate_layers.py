@@ -1,4 +1,4 @@
-"""Valida as camadas raw, trusted, refined e o DW SQLite."""
+"""Valida as camadas bronze, silver, gold e o DW PostgreSQL."""
 
 from __future__ import annotations
 
@@ -8,11 +8,11 @@ import sqlite3
 from pyspark.sql import SparkSession
 
 from config import PipelineConfig
-from refined import SUMMARY_TABLE
+from gold import SUMMARY_TABLE
 
 
 def count_json_records(directory: Path) -> int:
-    """Conta registros JSON em arquivos produzidos pela camada raw."""
+    """Conta registros JSON em arquivos produzidos pela camada bronze."""
     total = 0
     for file_path in directory.glob("*.json"):
         with file_path.open(encoding="utf-8") as file:
@@ -32,16 +32,16 @@ def main() -> None:
     spark.sparkContext.setLogLevel("ERROR")
 
     try:
-        raw_count = count_json_records(config.raw_dir)
-        trusted = spark.read.parquet(str(config.trusted_dir))
-        refined = spark.read.parquet(str(config.refined_dir))
+        bronze_count = count_json_records(config.bronze_dir)
+        silver = spark.read.parquet(str(config.silver_dir))
+        gold = spark.read.parquet(str(config.gold_dir))
 
         print("=== VALIDACAO DAS CAMADAS ===")
-        print(f"RAW     | registros JSON: {raw_count}")
-        print(f"TRUSTED | registros Parquet: {trusted.count()}")
-        print(f"TRUSTED | colunas: {', '.join(trusted.columns)}")
-        print(f"REFINED | registros Parquet: {refined.count()}")
-        print(f"REFINED | colunas: {', '.join(refined.columns)}")
+        print(f"BRONZE  | registros JSON: {bronze_count}")
+        print(f"SILVER  | registros Parquet: {silver.count()}")
+        print(f"SILVER  | colunas: {', '.join(silver.columns)}")
+        print(f"GOLD    | registros Parquet: {gold.count()}")
+        print(f"GOLD    | colunas: {', '.join(gold.columns)}")
 
         with sqlite3.connect(config.sqlite_path) as connection:
             table_exists = connection.execute(

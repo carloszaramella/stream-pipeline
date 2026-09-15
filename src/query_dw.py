@@ -7,7 +7,7 @@ import argparse
 import psycopg2
 
 from config import PipelineConfig
-from refined import SUMMARY_TABLE
+from gold import SUMMARY_TABLE
 
 
 QUERIES = {

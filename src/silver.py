@@ -1,5 +1,5 @@
 
-"""Camada TRUSTED: tipa, normaliza e valida os eventos da camada RAW."""
+"""Camada SILVER: tipa, normaliza e valida os eventos da camada BRONZE."""
 
 from __future__ import annotations
 
@@ -8,18 +8,18 @@ from pyspark.sql.functions import col, lit, lower, trim, upper, when
 
 from config import PipelineConfig
 from financing_schema import (
-    RAW_SCHEMA,
+    BRONZE_SCHEMA,
     VALID_REGIONS,
     VALID_STATUSES,
     VALID_VEHICLE_TYPES,
 )
 
 
-def transform_trusted(raw_stream: DataFrame) -> DataFrame:
-    """Normaliza e valida os registros da camada RAW."""
+def transform_silver(bronze_stream: DataFrame) -> DataFrame:
+    """Normaliza e valida os registros da camada BRONZE."""
 
     normalized = (
-        raw_stream
+        bronze_stream
         .withColumn(
             "vehicle_type",
             upper(trim(col("vehicle_type"))),
@@ -93,31 +93,31 @@ def transform_trusted(raw_stream: DataFrame) -> DataFrame:
     )
 
 
-def start_trusted_query(
+def start_silver_query(
     spark: SparkSession,
     config: PipelineConfig,
 ):
-    """Lê RAW do MinIO e grava TRUSTED no MinIO."""
+    """Lê BRONZE do MinIO e grava SILVER no MinIO."""
 
-    # RAW está armazenada como Parquet no MinIO.
-    raw_stream = (
+    # BRONZE está armazenada como Parquet no MinIO.
+    bronze_stream = (
         spark.readStream
-        .schema(RAW_SCHEMA)
-        .parquet(config.raw_storage_path)
+        .schema(BRONZE_SCHEMA)
+        .parquet(config.bronze_storage_path)
     )
 
     return (
-        transform_trusted(raw_stream)
+        transform_silver(bronze_stream)
         .writeStream
         .format("parquet")
         .outputMode("append")
         .option(
             "path",
-            config.trusted_storage_path,
+            config.silver_storage_path,
         )
         .option(
             "checkpointLocation",
-            str(config.trusted_checkpoint_dir),
+            str(config.silver_checkpoint_dir),
         )
         .trigger(
             processingTime=config.trigger_interval
@@ -131,12 +131,12 @@ def main() -> None:
 
     spark = (
         SparkSession.builder
-        .appName("vehicle-financing-trusted")
+        .appName("vehicle-financing-silver")
         .getOrCreate()
     )
 
     try:
-        query = start_trusted_query(
+        query = start_silver_query(
             spark,
             config,
         )

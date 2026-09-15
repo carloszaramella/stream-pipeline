@@ -35,9 +35,9 @@ postgres:
 clean:
 	rm -rf data/output/*
 	rm -rf data/checkpoint/*
-	rm -rf data/raw/*
-	rm -rf data/trusted/*
-	rm -rf data/refined/*
+	rm -rf data/bronze/*
+	rm -rf data/silver/*
+	rm -rf data/gold/*
 	rm -rf .pytest_cache
 	rm -rf src/__pycache__
 	rm -rf tests/__pycache__

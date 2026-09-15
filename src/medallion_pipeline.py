@@ -6,24 +6,24 @@ from __future__ import annotations
 from pyspark.sql import SparkSession
 
 from config import PipelineConfig
-from raw import start_raw_query
-from refined import materialize_refined_snapshot, start_refined_query
-from trusted import start_trusted_query
+from bronze import start_bronze_query
+from gold import materialize_gold_snapshot, start_gold_query
+from silver import start_silver_query
 
 
 def run_medallion_pipeline(config: PipelineConfig) -> None:
-    """Executa RAW, TRUSTED e REFINED durante o tempo configurado."""
+    """Executa BRONZE, SILVER e GOLD durante o tempo configurado."""
 
     # Diretorios que permanecem locais.
     #
-    # RAW e TRUSTED sao armazenadas no MinIO.
+    # BRONZE e SILVER sao armazenadas no MinIO.
     # Os checkpoints permanecem locais.
     for directory in (
         config.input_dir,
-        config.raw_checkpoint_dir,
-        config.trusted_checkpoint_dir,
-        config.refined_dir,
-        config.refined_checkpoint_dir,
+        config.bronze_checkpoint_dir,
+        config.silver_checkpoint_dir,
+        config.gold_dir,
+        config.gold_checkpoint_dir,
     ):
         directory.mkdir(parents=True, exist_ok=True)
 
@@ -88,39 +88,39 @@ def run_medallion_pipeline(config: PipelineConfig) -> None:
         #
         # Input
         #   ↓
-        # RAW
+        # BRONZE
         #   ↓
-        # TRUSTED
+        # SILVER
         #   ↓
-        # REFINED
+        # GOLD
         # ==========================================================
 
-        # RAW:
-        # data/input → MinIO /raw
-        raw_query = start_raw_query(
+        # BRONZE:
+        # data/input → MinIO /bronze
+        bronze_query = start_bronze_query(
             spark,
             config,
         )
-        queries.append(raw_query)
+        queries.append(bronze_query)
 
-        # TRUSTED:
-        # MinIO /raw → MinIO /trusted
-        trusted_query = start_trusted_query(
+        # SILVER:
+        # MinIO /bronze → MinIO /silver
+        silver_query = start_silver_query(
             spark,
             config,
         )
-        queries.append(trusted_query)
+        queries.append(silver_query)
 
-        # REFINED:
-        # MinIO /trusted → Parquet local + SQLite
-        refined_query = start_refined_query(
+        # GOLD:
+        # MinIO /silver → Parquet local + PostgreSQL
+        gold_query = start_gold_query(
             spark,
             config,
         )
-        queries.append(refined_query)
+        queries.append(gold_query)
 
-        # A query RAW controla o tempo total da execucao.
-        raw_query.awaitTermination(
+        # A query BRONZE controla o tempo total da execucao.
+        bronze_query.awaitTermination(
             config.runtime_seconds
         )
 
@@ -133,21 +133,21 @@ def run_medallion_pipeline(config: PipelineConfig) -> None:
                 pass
 
         # ==========================================================
-        # Snapshot final da REFINED
+        # Snapshot final da GOLD
         #
         # A execucao local e finita. Depois que as queries
-        # terminarem, le TRUSTED diretamente do MinIO e
+        # terminarem, le SILVER diretamente do MinIO e
         # fecha as janelas em batch.
         # ==========================================================
 
         try:
-            materialize_refined_snapshot(
+            materialize_gold_snapshot(
                 spark,
                 config,
             )
         except Exception as exc:
             print(
-                f"ERRO ao materializar snapshot REFINED: {exc}"
+                f"ERRO ao materializar snapshot GOLD: {exc}"
             )
             raise
 

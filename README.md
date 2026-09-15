@@ -1,6 +1,6 @@
 # Stream Pipeline
 
-Pipeline de Engenharia de Dados desenvolvido com **Apache Spark Structured Streaming**, utilizando **arquitetura Medallion (Raw, Trusted e Refined)**.
+Pipeline de Engenharia de Dados desenvolvido com **Apache Spark Structured Streaming**, utilizando **arquitetura Medallion (Bronze, Silver e Gold)**.
 
 O projeto demonstra ingestão incremental de eventos em formato **JSON**, validação e transformação dos dados, agregação utilizando **janelas temporais (Window)** e geração de saída em **Parquet**.
 
@@ -28,10 +28,7 @@ A solução atende ao enunciado principal e contempla os bônus propostos:
 | Stream Pipeline         | Apache Spark Structured Streaming   |
 | Ingestão                | Eventos JSON/JSONL                  |
 | Output em outro formato | Parquet                             |
-| Bônus 1                 | Validação e filtragem dos registros |
-| Bônus 2                 | Agregações                          |
-| Bônus 3                 | Window + Watermark                  |
-| Bônus 4                 | Docker e Docker Compose             |
+
 
 ---
 
@@ -47,7 +44,7 @@ O pipeline recebe eventos de financiamento de veículos, processa os dados de fo
                              │
                              ▼
                     ┌──────────────────┐
-                    │     RAW          │
+                    │    BRONZE       │
                     │ Dados originais  │
                     │    em Parquet    │
                     └────────┬─────────┘
@@ -58,7 +55,7 @@ O pipeline recebe eventos de financiamento de veículos, processa os dados de fo
                              │
                              ▼
                     ┌──────────────────┐
-                    │    TRUSTED       │
+                    │    SILVER       │
                     │ Dados validados  │
                     │ e padronizados   │
                     └────────┬─────────┘
@@ -68,7 +65,7 @@ O pipeline recebe eventos de financiamento de veículos, processa os dados de fo
                              │
                              ▼
                     ┌──────────────────┐
-                    │    REFINED       │
+                    │     GOLD        │
                     │ Dados agregados  │
                     │ para análise     │
                     └──────────────────┘
@@ -80,9 +77,9 @@ A arquitetura segue o conceito de **Medallion Architecture**, no qual os dados e
 
 ## 🏗️ Arquitetura
 
-### Raw
+### Bronze
 
-A camada **Raw** representa os eventos recebidos pelo pipeline em seu formato original.
+A camada **Bronze** representa os eventos recebidos pelo pipeline em seu formato original.
 
 Nesta etapa o objetivo é preservar os dados recebidos antes das transformações de qualidade.
 
@@ -96,9 +93,9 @@ Principais objetivos:
 
 ---
 
-### Trusted
+### Silver
 
-A camada **Trusted** contém os dados após aplicação das regras de qualidade e padronização.
+A camada **Silver** contém os dados após aplicação das regras de qualidade e padronização.
 
 Nesta etapa são realizados controles como:
 
@@ -113,9 +110,9 @@ O objetivo é evitar que dados inconsistentes avancem para as etapas analíticas
 
 ---
 
-### Refined
+### Gold
 
-A camada **Refined** contém os dados preparados para análise.
+A camada **Gold** contém os dados preparados para análise.
 
 Nesta etapa são realizadas:
 
@@ -187,7 +184,7 @@ Window de tempo
         Agregações
             │
             ▼
-        Dados Refined
+       Dados Gold
 ```
 
 ---
@@ -204,9 +201,9 @@ São verificadas regras relacionadas a:
 * atributos dos veículos;
 * consistência dos registros.
 
-Registros que não atendem às regras de qualidade são tratados como inválidos e não avançam normalmente para a camada Trusted.
+Registros que não atendem às regras de qualidade são tratados como inválidos e não avançam normalmente para a camada Silver.
 
-Essa etapa atende ao **Bônus 1** do enunciado.
+
 
 ---
 
@@ -229,11 +226,11 @@ stream-pipeline/
 │   ├── financing_schema.py
 │   ├── medallion_pipeline.py
 │   ├── pipeline.py
-│   ├── raw.py
-│   ├── refined.py
+│   ├── bronze.py
+│   ├── gold.py
 │   ├── schemas.py
 │   ├── transformations.py
-│   ├── trusted.py
+│   ├── silver.py
 │   └── validate_layers.py
 │
 ├── tests/
@@ -241,9 +238,9 @@ stream-pipeline/
 │
 └── data/
     ├── input/
-    ├── raw/
-    ├── trusted/
-    ├── refined/
+       ├── bronze/
+       ├── silver/
+       ├── gold/
     └── checkpoint/
 ```
 
@@ -341,22 +338,30 @@ Estrutura conceitual:
 
 ```text
 stream-pipeline/
-├── raw/
-├── trusted/
-├── refined/
+├── bronze/
+├── silver/
+├── gold/
 └── checkpoints/
 ```
 
 ---
 
-# 🐘 PostgreSQL
+# 🐘 PostgreSQL e consultas SQL
 
-O projeto disponibiliza **PostgreSQL como serviço opcional**, destinado à evolução da solução para uma arquitetura com Data Warehouse.
+O PostgreSQL armazena o resultado agregado da camada **GOLD** na tabela
+`vehicle_financing_summary`.
 
-O PostgreSQL é executado através do profile:
+Suba o banco, o MinIO e o inicializador do bucket:
 
 ```bash
-docker compose --profile warehouse up -d postgres
+docker compose up -d postgres minio minio-init
+```
+
+Execute o pipeline para processar os eventos e materializar a camada GOLD
+no PostgreSQL:
+
+```bash
+docker compose up --build stream-pipeline
 ```
 
 Configuração utilizada no ambiente de demonstração:
@@ -368,9 +373,83 @@ Password: dw_password
 Port:     5432
 ```
 
-O PostgreSQL não é necessário para a execução básica do Stream Pipeline apresentado neste trabalho.
+O pipeline também mantém os dados GOLD em Parquet. A tabela PostgreSQL é
+materializada ao final da execução do pipeline; por isso, execute as consultas
+somente depois que `stream-pipeline` terminar com código `0`.
 
-A execução principal do pipeline realiza a transformação e geração dos dados em **Parquet**, enquanto o PostgreSQL fica disponível como componente opcional para futuras extensões analíticas e de Data Warehouse.
+## Consulta pelo script
+
+Consulta o resumo por região, tipo de veículo e segmento:
+
+```bash
+docker compose run --rm stream-pipeline \
+       python3 src/query_dw.py --query resumo
+```
+
+Consulta as janelas e os modelos dos veículos:
+
+```bash
+docker compose run --rm stream-pipeline \
+       python3 src/query_dw.py --query janelas
+```
+
+## Consulta SQL direta
+
+Abra o cliente PostgreSQL:
+
+```bash
+docker compose exec postgres psql \
+       -U dw_user \
+       -d vehicle_financing
+```
+
+Dentro do `psql`, verifique a tabela e consulte os dados:
+
+```sql
+\dt
+
+SELECT *
+FROM vehicle_financing_summary
+ORDER BY window_start, region, vehicle_type;
+```
+
+Consulta agregada para análise:
+
+```sql
+SELECT
+              region,
+              vehicle_type,
+              segment,
+              SUM(financing_count) AS total_financiamentos,
+              SUM(total_financed_amount) AS valor_total_financiado,
+              ROUND(AVG(average_monthly_installment), 2) AS parcela_media
+FROM vehicle_financing_summary
+GROUP BY region, vehicle_type, segment
+ORDER BY valor_total_financiado DESC;
+```
+
+Também é possível executar uma consulta diretamente pelo terminal:
+
+```bash
+docker compose exec postgres psql \
+       -U dw_user \
+       -d vehicle_financing \
+       -c "SELECT COUNT(*) AS total_linhas FROM vehicle_financing_summary;"
+```
+
+## O que é o `sitecustomize.py`?
+
+O Python carrega automaticamente um arquivo chamado `sitecustomize.py` quando
+ele está disponível no caminho de importação. Neste projeto, esse arquivo
+seleciona um `JAVA_HOME` compatível antes da inicialização do Spark.
+
+Isso evita problemas quando o ambiente local usa uma versão recente do Java
+incompatível com o Spark 3.5.x. O script procura primeiro um `JAVA_HOME`
+compatível e, se necessário, verifica instalações de Java 21, 17, 11 ou 8.
+
+Ele não transforma dados, não configura o PostgreSQL e não participa da lógica
+das camadas BRONZE, SILVER ou GOLD. Seu papel é somente preparar o ambiente
+Java para executar o Spark localmente.
 
 ---
 
@@ -472,7 +551,7 @@ O formato Parquet foi escolhido por ser adequado para processamento analítico e
                          │
                          ▼
                   ┌─────────────┐
-                  │     RAW     │
+                  │    BRONZE   │
                   │   Parquet   │
                   └──────┬──────┘
                          │
@@ -484,7 +563,7 @@ O formato Parquet foi escolhido por ser adequado para processamento analítico e
                         │
                         ▼
                   ┌─────────────┐
-                  │   TRUSTED   │
+                  │    SILVER   │
                   │   Parquet   │
                   └──────┬──────┘
                          │
@@ -496,7 +575,7 @@ O formato Parquet foi escolhido por ser adequado para processamento analítico e
                         │
                         ▼
                   ┌─────────────┐
-                  │   REFINED   │
+                  │     GOLD    │
                   │   Parquet   │
                   └──────┬──────┘
                          │
@@ -576,7 +655,7 @@ Parquet
 
 ### Bônus 1 — Filtro e/ou validação
 
-Implementado através das regras de qualidade e validação dos eventos na camada Trusted.
+Implementado através das regras de qualidade e validação dos eventos na camada Silver.
 
 ### Bônus 2 — Agregação
 

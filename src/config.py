@@ -59,16 +59,16 @@ class PipelineConfig:
         return self.base_dir / "data" / "input"
 
     @property
-    def raw_dir(self) -> Path:
-        return self.base_dir / "data" / "raw"
+    def bronze_dir(self) -> Path:
+        return self.base_dir / "data" / "bronze"
 
     @property
-    def trusted_dir(self) -> Path:
-        return self.base_dir / "data" / "trusted"
+    def silver_dir(self) -> Path:
+        return self.base_dir / "data" / "silver"
 
     @property
-    def refined_dir(self) -> Path:
-        return self.base_dir / "data" / "refined"
+    def gold_dir(self) -> Path:
+        return self.base_dir / "data" / "gold"
 
     # ============================================================
     # SQLITE
@@ -79,7 +79,7 @@ class PipelineConfig:
 
     @property
     def sqlite_path(self) -> Path:
-        return self.refined_dir / "vehicle_financing.sqlite"
+        return self.gold_dir / "vehicle_financing.sqlite"
 
     # ============================================================
     # CHECKPOINTS LOCAIS
@@ -90,44 +90,44 @@ class PipelineConfig:
         return self.base_dir / "data" / "checkpoint"
 
     @property
-    def raw_checkpoint_dir(self) -> Path:
-        return self.checkpoint_dir / "raw"
+    def bronze_checkpoint_dir(self) -> Path:
+        return self.checkpoint_dir / "bronze"
 
     @property
-    def trusted_checkpoint_dir(self) -> Path:
-        return self.checkpoint_dir / "trusted"
+    def silver_checkpoint_dir(self) -> Path:
+        return self.checkpoint_dir / "silver"
 
     @property
-    def refined_checkpoint_dir(self) -> Path:
-        return self.checkpoint_dir / "refined"
+    def gold_checkpoint_dir(self) -> Path:
+        return self.checkpoint_dir / "gold"
 
     # ============================================================
     # MINIO / S3
     # ============================================================
 
     @property
-    def raw_storage_path(self) -> str:
-        return f"s3a://{self.minio_bucket}/raw"
+    def bronze_storage_path(self) -> str:
+        return f"s3a://{self.minio_bucket}/bronze"
 
     @property
-    def trusted_storage_path(self) -> str:
-        return f"s3a://{self.minio_bucket}/trusted"
+    def silver_storage_path(self) -> str:
+        return f"s3a://{self.minio_bucket}/silver"
 
     @property
-    def refined_storage_path(self) -> str:
-        return f"s3a://{self.minio_bucket}/refined"
+    def gold_storage_path(self) -> str:
+        return f"s3a://{self.minio_bucket}/gold"
 
     @property
-    def raw_storage_checkpoint(self) -> str:
-        return f"s3a://{self.minio_bucket}/checkpoints/raw"
+    def bronze_storage_checkpoint(self) -> str:
+        return f"s3a://{self.minio_bucket}/checkpoints/bronze"
 
     @property
-    def trusted_storage_checkpoint(self) -> str:
-        return f"s3a://{self.minio_bucket}/checkpoints/trusted"
+    def silver_storage_checkpoint(self) -> str:
+        return f"s3a://{self.minio_bucket}/checkpoints/silver"
 
     @property
-    def refined_storage_checkpoint(self) -> str:
-        return f"s3a://{self.minio_bucket}/checkpoints/refined"
+    def gold_storage_checkpoint(self) -> str:
+        return f"s3a://{self.minio_bucket}/checkpoints/gold"
 
     # ============================================================
     # POSTGRESQL / JDBC

@@ -27,13 +27,13 @@ def run_pipeline(config: PipelineConfig) -> None:
     spark.sparkContext.setLogLevel("WARN")
 
     try:
-        raw_stream = (
+        bronze_stream = (
             spark.readStream
             .format("rate")
             .option("rowsPerSecond", config.rows_per_second)
             .load()
         )
-        events = build_events_stream(raw_stream)
+        events = build_events_stream(bronze_stream)
         valid_events, invalid_events = validate_events(events)
         summary = summarize_events(
             valid_events,

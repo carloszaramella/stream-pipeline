@@ -1,4 +1,4 @@
-"""Camada REFINED: agrega financiamentos por janela e dimensoes de negocio."""
+"""Camada GOLD: agrega financiamentos por janela e dimensoes de negocio."""
 
 from __future__ import annotations
 
@@ -20,14 +20,14 @@ from financing_schema import FINANCING_SCHEMA
 SUMMARY_TABLE = "vehicle_financing_summary"
 
 
-def aggregate_refined(
-    trusted_stream: DataFrame,
+def aggregate_gold(
+    silver_stream: DataFrame,
     window_duration: str,
     watermark_duration: str,
 ) -> DataFrame:
     """Calcula indicadores por segmento, regiao, tipo e modelo do veiculo."""
     return (
-        trusted_stream
+        silver_stream
         .withWatermark("created_at", watermark_duration)
         .groupBy(
             window(col("created_at"), window_duration),
@@ -65,13 +65,13 @@ def aggregate_refined(
     )
 
 
-def aggregate_refined_batch(
-    trusted_df: DataFrame,
+def aggregate_gold_batch(
+    silver_df: DataFrame,
     window_duration: str,
 ) -> DataFrame:
-    """Agrega a camada trusted em batch para fechar as janelas."""
+    """Agrega a camada silver em batch para fechar as janelas."""
     return (
-        trusted_df
+        silver_df
         .groupBy(
             window(col("created_at"), window_duration),
             col("segment"),
@@ -109,7 +109,7 @@ def aggregate_refined_batch(
 
 
 def create_postgres_table(config: PipelineConfig) -> None:
-    """Cria a tabela REFINED no PostgreSQL."""
+    """Cria a tabela GOLD no PostgreSQL."""
     with psycopg2.connect(
         host=config.postgres_host,
         port=config.postgres_port,
@@ -150,7 +150,7 @@ def create_postgres_table(config: PipelineConfig) -> None:
         connection.commit()
 
 
-def write_refined_batch(
+def write_gold_batch(
     batch_df: DataFrame,
     batch_id: int,
     config: PipelineConfig,
@@ -168,7 +168,7 @@ def write_refined_batch(
                 "region",
                 "vehicle_type",
             )
-            .save(str(config.refined_dir))
+            .save(str(config.gold_dir))
         )
 
     rows = [
@@ -243,26 +243,26 @@ def write_refined_batch(
         connection.commit()
 
 
-def materialize_refined_snapshot(
+def materialize_gold_snapshot(
     spark: SparkSession,
     config: PipelineConfig,
 ) -> None:
     """Fecha as janelas e grava o snapshot final."""
 
-    trusted_df = (
+    silver_df = (
         spark.read
         .schema(FINANCING_SCHEMA)
-        .parquet(config.trusted_storage_path)
+        .parquet(config.silver_storage_path)
     )
 
-    refined_df = aggregate_refined_batch(
-        trusted_df,
+    gold_df = aggregate_gold_batch(
+        silver_df,
         config.window_duration,
     )
 
     # Mantem o Parquet como artefato analitico.
     (
-        refined_df.write
+        gold_df.write
         .mode("overwrite")
         .format("parquet")
         .partitionBy(
@@ -270,7 +270,7 @@ def materialize_refined_snapshot(
             "region",
             "vehicle_type",
         )
-        .save(str(config.refined_dir))
+        .save(str(config.gold_dir))
     )
 
     # Garante que a tabela PostgreSQL exista.
@@ -290,38 +290,38 @@ def materialize_refined_snapshot(
 
         connection.commit()
 
-    write_refined_batch(
-        refined_df,
+    write_gold_batch(
+        gold_df,
         -1,
         config,
         write_parquet=False,
     )
 
 
-def start_refined_query(
+def start_gold_query(
     spark: SparkSession,
     config: PipelineConfig,
 ):
-    """Lê TRUSTED do MinIO e grava REFINED em Parquet e PostgreSQL."""
+    """Lê SILVER do MinIO e grava GOLD em Parquet e PostgreSQL."""
 
-    trusted_stream = (
+    silver_stream = (
         spark.readStream
         .schema(FINANCING_SCHEMA)
-        .parquet(config.trusted_storage_path)
+        .parquet(config.silver_storage_path)
     )
 
     create_postgres_table(config)
 
     return (
-        aggregate_refined(
-            trusted_stream,
+        aggregate_gold(
+            silver_stream,
             window_duration=config.window_duration,
             watermark_duration=config.watermark_duration,
         )
         .writeStream
         .outputMode("append")
         .foreachBatch(
-            lambda batch, batch_id: write_refined_batch(
+            lambda batch, batch_id: write_gold_batch(
                 batch,
                 batch_id,
                 config,
@@ -329,7 +329,7 @@ def start_refined_query(
         )
         .option(
             "checkpointLocation",
-            str(config.refined_checkpoint_dir),
+            str(config.gold_checkpoint_dir),
         )
         .trigger(
             processingTime=config.trigger_interval
@@ -343,17 +343,17 @@ def main() -> None:
 
     spark = (
         SparkSession.builder
-        .appName("vehicle-financing-refined")
+        .appName("vehicle-financing-gold")
         .getOrCreate()
     )
 
     try:
-        query = start_refined_query(spark, config)
+        query = start_gold_query(spark, config)
         query.awaitTermination(config.runtime_seconds)
         query.stop()
 
         # Fecha e materializa o snapshot final.
-        materialize_refined_snapshot(spark, config)
+        materialize_gold_snapshot(spark, config)
 
     finally:
         spark.stop()

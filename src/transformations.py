@@ -60,11 +60,11 @@ VALID_REGIONS = (
 )
 
 
-def build_events_stream(raw_stream: DataFrame) -> DataFrame:
+def build_events_stream(bronze_stream: DataFrame) -> DataFrame:
     """Converte a fonte rate em eventos sinteticos de financiamento."""
 
     return (
-        raw_stream
+        bronze_stream
         .withColumn(
             "financing_id",
             concat(
