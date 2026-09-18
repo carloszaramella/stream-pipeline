@@ -157,8 +157,10 @@ def write_gold_batch(
     write_parquet: bool = True,
 ) -> None:
     """Grava cada microbatch em Parquet e PostgreSQL."""
+    print(f"[GOLD] Processando batch {batch_id} com {batch_df.count()} registros")
 
     if write_parquet:
+        print(f"[GOLD] Gravando batch {batch_id} em Parquet em {config.gold_dir}")
         (
             batch_df.write
             .mode("append")
@@ -170,6 +172,7 @@ def write_gold_batch(
             )
             .save(str(config.gold_dir))
         )
+        print(f"[GOLD] Parquet do batch {batch_id} gravado")
 
     rows = [
         (
@@ -189,6 +192,7 @@ def write_gold_batch(
     ]
 
     if not rows:
+        print(f"[GOLD] Batch {batch_id} vazio; nada a gravar no PostgreSQL")
         return
 
     with psycopg2.connect(
@@ -201,6 +205,7 @@ def write_gold_batch(
 
         with connection.cursor() as cursor:
 
+            print(f"[GOLD] Gravando {len(rows)} linhas no PostgreSQL (batch {batch_id})")
             cursor.executemany(
                 f"""
                 INSERT INTO {SUMMARY_TABLE} (
@@ -239,8 +244,8 @@ def write_gold_batch(
                 """,
                 rows,
             )
-
-        connection.commit()
+            connection.commit()
+        print(f"[GOLD] Batch {batch_id} gravado no PostgreSQL com sucesso")
 
 
 def materialize_gold_snapshot(

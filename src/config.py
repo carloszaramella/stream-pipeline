@@ -22,6 +22,11 @@ class PipelineConfig:
     watermark_duration: str = "30 seconds"
     trigger_interval: str = "5 seconds"
     runtime_seconds: int = 30
+    # ============================================================
+    # INITIAL INPUT (used to generate test events at pipeline start)
+    # ============================================================
+    initial_events: int = 0
+    initial_interval: float = 0.0
 
     # ============================================================
     # MINIO
@@ -244,5 +249,18 @@ class PipelineConfig:
             postgres_password=os.getenv(
                 "POSTGRES_PASSWORD",
                 cls.postgres_password,
+            ),
+            initial_events=int(
+                os.getenv(
+                    "INITIAL_EVENTS",
+                    str(cls.initial_events),
+                )
+            ),
+
+            initial_interval=float(
+                os.getenv(
+                    "INITIAL_INTERVAL",
+                    str(cls.initial_interval),
+                )
             ),
         )
